@@ -41,24 +41,22 @@ class LiquidityEngine:
         # Results storage
         self.period_results = []
         self.current_period = 0
-    
+
     def run_simulation(
         self,
-        progress_callback: Optional[Callable] = None
-    ) -> Dict:
-        """
-        Run the full simulation
-        
-        Args:
-            progress_callback: Callback for progress updates
-            
-        Returns:
-            Dict: Simulation results
-        """
+        progress_callback: Optional[Callable] = None) -> Dict:
+        """Run the full simulation"""
         logger.info(f"Starting simulation: {self.scenario.name}")
+        
+        # ✅ ADD: Log opening position
+        opening_metrics = self._calculate_metrics(self.initial_balance_sheet)
+        logger.info(f"Opening metrics: LCR={opening_metrics['lcr']:.2f}%, CET1={opening_metrics['cet1_ratio']:.2f}%")
+        logger.info(f"Opening cash: {self.initial_balance_sheet.data['assets'].get('cash_reserves', 0):.2f}M")
+        logger.info(f"Opening HQLA: {self.initial_balance_sheet.total_hqla():.2f}M")
         
         # Initialize
         bs = self.initial_balance_sheet.copy()
+       
         breached = False
         breach_info = None
         
@@ -89,34 +87,39 @@ class LiquidityEngine:
         logger.info(f"Simulation completed: Survival horizon = {results['survival_horizon']} periods")
         
         return results
-    
+
     def _execute_period(self, balance_sheet, period: int) -> Dict:
         """Execute a single period"""
         period_data = {
             'period': period,
-            'opening_bs': balance_sheet.to_dict() if hasattr(balance_sheet, 'to_dict') else {},
+            'opening_bs': balance_sheet.to_dict(),
             'outflows': {},
             'liquidations': [],
             'losses': 0,
             'metrics': {}
         }
         
-        # Step 1: Apply deposit withdrawals
+        # ✅ FIX: Calculate opening metrics BEFORE withdrawals
+        period_data['opening_metrics'] = self._calculate_metrics(balance_sheet)
+        
+        # Step 1: Apply deposit withdrawals (reduces liabilities)
         total_outflow = self._apply_withdrawals(balance_sheet, period, period_data)
         
-        # Step 2: Meet outflows through asset liquidation
-        self._meet_outflows(balance_sheet, total_outflow, period_data)
+        # Step 2: Meet outflows through asset liquidation (reduces assets and maintains balance)
+        if total_outflow > 0:
+            self._meet_outflows(balance_sheet, total_outflow, period_data)
         
         # Step 3: Apply credit deterioration (every 10 periods)
         if period % 10 == 0 and period > 0:
             credit_impact = self.scenario.apply_credit_deterioration(balance_sheet)
             period_data['credit_impact'] = credit_impact
         
-        # Step 4: Calculate metrics
+        # Step 4: Calculate closing metrics
         period_data['metrics'] = self._calculate_metrics(balance_sheet)
-        period_data['closing_bs'] = balance_sheet.to_dict() if hasattr(balance_sheet, 'to_dict') else {}
+        period_data['closing_bs'] = balance_sheet.to_dict()
         
         return period_data
+   
     
     def _apply_withdrawals(self, balance_sheet, period: int, period_data: Dict) -> float:
         """Apply deposit withdrawals"""
@@ -137,7 +140,7 @@ class LiquidityEngine:
         
         return total_outflow
     
-    def _meet_outflows(self, balance_sheet, outflow: float, period_data: Dict):
+   def _meet_outflows(self, balance_sheet, outflow: float, period_data: Dict):
         """Meet outflows through asset liquidation"""
         remaining_outflow = outflow
         
@@ -152,12 +155,30 @@ class LiquidityEngine:
             'Real Estate': 'real_estate'
         }
         
+        # ✅ FIX: Use cash FIRST before liquidating other assets
+        cash_available = balance_sheet.data['assets'].get('cash_reserves', 0)
+        if cash_available > 0 and remaining_outflow > 0:
+            cash_used = min(remaining_outflow, cash_available)
+            balance_sheet.data['assets']['cash_reserves'] -= cash_used
+            remaining_outflow -= cash_used
+            
+            period_data['liquidations'].append({
+                'asset_type': 'cash_reserves',
+                'amount_liquidated': cash_used,
+                'haircut_pct': 0,
+                'proceeds': cash_used,
+                'loss': 0
+            })
+            
+            logger.debug(f"Used cash: {cash_used:.2f}M, remaining outflow: {remaining_outflow:.2f}M")
+        
+        # Then liquidate other assets if needed
         for asset_name in self.liquidation_order:
-            if remaining_outflow <= 0:
+            if remaining_outflow <= 0.01:  # Small tolerance for rounding
                 break
             
             asset_type = asset_mapping.get(asset_name)
-            if not asset_type:
+            if not asset_type or asset_type == 'cash_reserves':  # Skip cash, already used
                 continue
             
             available = balance_sheet.data['assets'].get(asset_type, 0)
@@ -167,20 +188,28 @@ class LiquidityEngine:
             # Calculate haircut
             haircut = self._get_liquidation_haircut(asset_type, available)
             
-            # Liquidate
-            amount_to_liquidate = min(remaining_outflow / (1 - haircut / 100), available)
+            # Calculate how much to liquidate
+            # Need: remaining_outflow = amount * (1 - haircut/100)
+            # So: amount = remaining_outflow / (1 - haircut/100)
+            amount_to_liquidate = min(
+                remaining_outflow / (1 - haircut / 100) if haircut < 100 else remaining_outflow,
+                available
+            )
             
             if amount_to_liquidate > 0:
                 result = balance_sheet.liquidate_asset(asset_type, amount_to_liquidate, haircut)
                 period_data['liquidations'].append(result)
                 period_data['losses'] += result['loss']
                 remaining_outflow -= result['proceeds']
+                
+                logger.debug(
+                    f"Liquidated {result['asset_type']}: {result['amount_liquidated']:.2f}M, "
+                    f"proceeds: {result['proceeds']:.2f}M, remaining: {remaining_outflow:.2f}M"
+                )
         
-        # Use cash to meet remaining
-        if remaining_outflow > 0:
-            cash_available = balance_sheet.data['assets'].get('cash_reserves', 0)
-            cash_used = min(remaining_outflow, cash_available)
-            balance_sheet.data['assets']['cash_reserves'] -= cash_used
+        # ✅ Check if we couldn't meet outflows
+        if remaining_outflow > 0.01:
+            logger.warning(f"Unable to meet all outflows. Shortfall: {remaining_outflow:.2f}M")
     
     def _get_liquidation_haircut(self, asset_type: str, available: float) -> float:
         """Calculate haircut including fire-sale premium"""
