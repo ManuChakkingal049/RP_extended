@@ -1,0 +1,19 @@
+Category,Item,Amount_M_EUR
+Assets,Cash & Central Bank Reserves,1000
+Assets,HQLA Level 1,2000
+Assets,HQLA Level 2A,500
+Assets,HQLA Level 2B,300
+Assets,Performing Loans,15000
+Assets,Non-Performing Loans,500
+Assets,Real Estate / Illiquid Assets,1000
+Assets,Other Marketable Securities,800
+Assets,Other Assets,200
+Liabilities,Stable Retail Deposits,8000
+Liabilities,Less Stable Retail Deposits,4000
+Liabilities,Corporate Deposits,3000
+Liabilities,Wholesale Funding,2000
+Liabilities,Secured Funding,1500
+Liabilities,Other Liabilities,500
+Equity,CET1 Capital,1500
+Equity,AT1 Capital,200
+Equity,Tier 2 Capital,300
