@@ -1,5 +1,5 @@
 """
-Stress Scenario Module
+Stress Scenario Module - PATCHED VERSION
 Defines and manages stress scenarios for liquidity simulations
 """
 
@@ -252,10 +252,18 @@ class StressScenario:
         Returns:
             StressScenario: Scenario object
         """
+        # Make a copy to avoid modifying original
+        data = data.copy()
+        
         # Handle custom runoff
         custom_runoff = None
         if 'custom_runoff' in data:
-            custom_runoff = pd.DataFrame.from_dict(data.pop('custom_runoff'))
+            custom_runoff_data = data.pop('custom_runoff')
+            if custom_runoff_data is not None:
+                if isinstance(custom_runoff_data, pd.DataFrame):
+                    custom_runoff = custom_runoff_data
+                else:
+                    custom_runoff = pd.DataFrame.from_dict(custom_runoff_data)
         
         scenario = cls(**data)
         scenario.custom_runoff = custom_runoff
@@ -266,6 +274,26 @@ class StressScenario:
         return (f"StressScenario(name='{self.name}', "
                 f"granularity={self.time_granularity}, "
                 f"periods={self.num_periods})")
+
+
+# NEW: Helper function for safe scenario handling
+def ensure_scenario_object(scenario: Union[StressScenario, Dict]) -> StressScenario:
+    """
+    Ensure we have a StressScenario object
+    
+    Args:
+        scenario: Either a StressScenario object or dictionary
+        
+    Returns:
+        StressScenario: Scenario object
+    """
+    if isinstance(scenario, StressScenario):
+        return scenario
+    elif isinstance(scenario, dict):
+        logger.debug("Converting scenario dict to StressScenario object")
+        return StressScenario.from_dict(scenario)
+    else:
+        raise TypeError(f"Expected StressScenario or dict, got {type(scenario)}")
 
 
 class ScenarioLibrary:
@@ -373,10 +401,28 @@ class ScenarioLibrary:
         Get all predefined scenarios
         
         Returns:
-            List[StressScenario]: List of scenarios
+            List[StressScenario]: List of scenario OBJECTS (not dicts)
         """
         return [
             ScenarioLibrary.basel_lcr_standard(),
             ScenarioLibrary.severe_stress(),
             ScenarioLibrary.idiosyncratic_crisis()
         ]
+    
+    @staticmethod
+    def get_scenario_by_name(name: str) -> Optional[StressScenario]:
+        """
+        Get a predefined scenario by name
+        
+        Args:
+            name: Scenario name
+            
+        Returns:
+            StressScenario: Scenario object or None if not found
+        """
+        scenarios = {
+            "Basel III LCR Standard": ScenarioLibrary.basel_lcr_standard(),
+            "Severe Combined Stress": ScenarioLibrary.severe_stress(),
+            "Idiosyncratic Bank Crisis": ScenarioLibrary.idiosyncratic_crisis()
+        }
+        return scenarios.get(name)
