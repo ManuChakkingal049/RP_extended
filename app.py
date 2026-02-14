@@ -989,7 +989,6 @@ def show_results():
         )
         log_user_action("results_exported", {'format': 'json'})
 
-
 def create_excel_export(results, periods_data):
     """Create Excel file with multiple sheets"""
     import io
@@ -1029,23 +1028,29 @@ def create_excel_export(results, periods_data):
         ws_summary[f'A{i}'].font = Font(bold=True)
     
     # Period Data Sheet
-    ws_data = wb.create_sheet("Period Data")
-    
-    # Convert periods_data to rows
-    df = pd.DataFrame(periods_data)
-    
-    # Headers
-    for col_num, col_name in enumerate(df.columns, start=1):
-        cell = ws_data.cell(row=1, column=col_num)
-        cell.value = col_name.replace('_', ' ').title()
-        cell.font = Font(bold=True)
-        cell.fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
-        cell.font = Font(color="FFFFFF", bold=True)
-    
-    # Data
-    for row_num, row_data in enumerate(df.values, start=2):
-        for col_num, value in enumerate(row_data, start=1):
-            ws_data.cell(row=row_num, column=col_num, value=value)
+    if periods_data:
+        ws_data = wb.create_sheet("Period Data")
+        
+        # Convert periods_data to DataFrame
+        df = pd.DataFrame(periods_data)
+        
+        # Headers
+        for col_num, col_name in enumerate(df.columns, start=1):
+            cell = ws_data.cell(row=1, column=col_num)
+            cell.value = col_name.replace('_', ' ').title()
+            cell.font = Font(bold=True)
+            cell.fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+            cell.font = Font(color="FFFFFF", bold=True)
+        
+        # Data
+        for row_num, row_data in enumerate(df.values, start=2):
+            for col_num, value in enumerate(row_data, start=1):
+                cell = ws_data.cell(row=row_num, column=col_num)
+                # Handle different data types
+                if isinstance(value, (int, float)):
+                    cell.value = float(value) if not np.isnan(value) else 0
+                else:
+                    cell.value = str(value)
     
     # Save to buffer
     buffer = io.BytesIO()
@@ -1053,6 +1058,8 @@ def create_excel_export(results, periods_data):
     buffer.seek(0)
     
     return buffer.getvalue()
+
+
 
 
 def create_csv_export(periods_data):
