@@ -1,7 +1,23 @@
+# Bank Recovery Planning and Liquidity Stress Simulator
+# Requirements file - no version constraints for faster install
+
+# Core dependencies
 streamlit
 pandas
 numpy
-plotly
+
+# Excel file handling
 openpyxl
-xlrd
-python-dateutil
+
+# Visualization (if needed)
+plotly
+matplotlib
+
+# Data validation
+pydantic
+
+# Logging
+python-json-logger
+
+# Optional but recommended
+scipy
