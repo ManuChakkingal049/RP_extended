@@ -945,50 +945,85 @@ def show_results():
     
     # Export options
     st.markdown("---")
-    st.subheader("📥 Export Results")
-    
-    if not periods_data:
-        st.warning("⚠️ Cannot export - no period data available")
-        return
-    
+    # Export options
+st.markdown("---")
+st.subheader("📥 Export Results")
+
+periods_data = results.get('periods_data', [])
+
+if not periods_data:
+    st.warning("⚠️ Cannot export - no period data available")
+else:
     col1, col2, col3 = st.columns(3)
     
     with col1:
         # Excel export
-        excel_buffer = create_excel_export(results, periods_data)
-        st.download_button(
-            label="📊 Download Excel Report",
-            data=excel_buffer,
-            file_name=f"simulation_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True
-        )
-        log_user_action("results_exported", {'format': 'excel'})
+        try:
+            excel_buffer = create_excel_export(results, periods_data)
+            st.download_button(
+                label="📊 Download Excel Report",
+                data=excel_buffer,
+                file_name=f"simulation_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
+            log_user_action("results_exported", {'format': 'excel'})
+        except Exception as e:
+            st.error(f"Excel export failed: {str(e)}")
+            logger.error(f"Excel export error: {str(e)}")
     
     with col2:
         # CSV export
-        csv_data = create_csv_export(periods_data)
-        st.download_button(
-            label="📋 Download CSV Data",
-            data=csv_data,
-            file_name=f"simulation_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-            mime="text/csv",
-            use_container_width=True
-        )
-        log_user_action("results_exported", {'format': 'csv'})
+        try:
+            csv_data = create_csv_export(periods_data)
+            st.download_button(
+                label="📋 Download CSV Data",
+                data=csv_data,
+                file_name=f"simulation_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+            log_user_action("results_exported", {'format': 'csv'})
+        except Exception as e:
+            st.error(f"CSV export failed: {str(e)}")
+            logger.error(f"CSV export error: {str(e)}")
     
     with col3:
         # JSON export
-        json_data = json.dumps(results, indent=2, default=str)
-        st.download_button(
-            label="📄 Download JSON",
-            data=json_data,
-            file_name=f"simulation_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-            mime="application/json",
-            use_container_width=True
-        )
-        log_user_action("results_exported", {'format': 'json'})
+        try:
+            # ✅ FIX: Handle numpy types in JSON
+            def convert_types(obj):
+                """Convert numpy types to Python types"""
+                if isinstance(obj, np.integer):
+                    return int(obj)
+                elif isinstance(obj, np.floating):
+                    return float(obj)
+                elif isinstance(obj, np.ndarray):
+                    return obj.tolist()
+                elif isinstance(obj, dict):
+                    return {k: convert_types(v) for k, v in obj.items()}
+                elif isinstance(obj, list):
+                    return [convert_types(item) for item in obj]
+                return obj
+            
+            results_clean = convert_types(results)
+            json_data = json.dumps(results_clean, indent=2, default=str)
+            
+            st.download_button(
+                label="📄 Download JSON",
+                data=json_data,
+                file_name=f"simulation_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                mime="application/json",
+                use_container_width=True
+            )
+            log_user_action("results_exported", {'format': 'json'})
+        except Exception as e:
+            st.error(f"JSON export failed: {str(e)}")
+            logger.error(f"JSON export error: {str(e)}")
 
+
+    
+    
 def create_excel_export(results, periods_data):
     """Create Excel file with multiple sheets"""
     import io
