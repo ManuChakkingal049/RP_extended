@@ -310,6 +310,8 @@ class LiquidityEngine:
     
     def _compile_results(self, breached: bool, breach_info: Optional[Dict]) -> Dict:
         """Compile final results"""
+        from datetime import datetime  # Add this import at top of file
+        
         if breached and breach_info:
             survival_horizon = breach_info['period']
             breach_type = breach_info['type']
@@ -328,6 +330,33 @@ class LiquidityEngine:
         # Get final metrics
         final_metrics = self.period_results[-1]['metrics'] if self.period_results else {}
         
+        # Generate period-by-period data for charts
+        periods_data = []
+        for p in self.period_results:
+            # ✅ FIX: Safely access nested dictionaries
+            closing_assets = p.get('closing_bs', {}).get('assets', {})
+            closing_liabilities = p.get('closing_bs', {}).get('liabilities', {})
+            closing_equity = p.get('closing_bs', {}).get('equity', {})
+            
+            periods_data.append({
+                'period': p['period'] + 1,  # Display as 1-indexed
+                'cash': closing_assets.get('cash_reserves', 0),
+                'hqla_total': (
+                    closing_assets.get('hqla_level1', 0) +
+                    closing_assets.get('hqla_level2a', 0) +
+                    closing_assets.get('hqla_level2b', 0)
+                ),
+                'total_assets': sum(closing_assets.values()) if closing_assets else 0,
+                'total_liabilities': sum(closing_liabilities.values()) if closing_liabilities else 0,
+                'equity': sum(closing_equity.values()) if closing_equity else 0,
+                'lcr': p['metrics'].get('lcr', 0),
+                'nsfr': p['metrics'].get('nsfr', 0),
+                'cet1_ratio': p['metrics'].get('cet1_ratio', 0),
+                'liquidity_buffer': p['metrics'].get('liquid_assets', 0),
+                'deposit_runoff': sum(p['outflows'].values()),
+                'asset_sales': sum(liq['amount_liquidated'] for liq in p['liquidations'])
+            })
+        
         return {
             'survival_horizon': survival_horizon,
             'breach_type': breach_type,
@@ -339,5 +368,9 @@ class LiquidityEngine:
             'final_lcr': final_metrics.get('lcr', 0),
             'final_cet1': final_metrics.get('cet1_ratio', 0),
             'period_results': self.period_results,
-            'scenario_name': self.scenario.name
+            'periods_data': periods_data,
+            'scenario_name': self.scenario.name,
+            'time_granularity': self.scenario.time_granularity,
+            'num_periods': self.scenario.num_periods,
+            'simulation_timestamp': datetime.now().isoformat()  # ✅ ADD THIS
         }
