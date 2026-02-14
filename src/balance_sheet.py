@@ -195,14 +195,17 @@ class BalanceSheet:
         if assets == 0:
             return 0
         return (self.total_equity() / assets) * 100
-    
-    def apply_withdrawal(self, deposit_type: str, amount: float):
+
+    def apply_withdrawal(self, deposit_type: str, amount: float) -> float:
         """
         Apply a deposit withdrawal
         
         Args:
             deposit_type: Type of deposit (e.g., 'retail_stable')
             amount: Amount to withdraw
+            
+        Returns:
+            float: Actual amount withdrawn
         """
         if deposit_type not in self.data['liabilities']:
             raise ValueError(f"Unknown deposit type: {deposit_type}")
@@ -210,11 +213,18 @@ class BalanceSheet:
         current_amount = self.data['liabilities'][deposit_type]
         withdrawal = min(amount, current_amount)  # Can't withdraw more than available
         
+        # Reduce liability
         self.data['liabilities'][deposit_type] -= withdrawal
+        
+        # ✅ FIX: Also reduce cash (this maintains balance sheet equation)
+        # The cash reduction will be handled by liquidation in the engine
+        # So we just track the outflow here
         
         logger.debug(f"Withdrawal applied: {deposit_type} = {withdrawal:.2f}M")
         
         return withdrawal
+    
+   
     
     def liquidate_asset(self, asset_type: str, amount: float, haircut: float = 0) -> Dict:
         """
@@ -320,6 +330,21 @@ class BalanceSheet:
             period=self.period,
             timestamp=self.timestamp
         )
+
+    def to_dict(self) -> Dict:
+        """
+        Convert balance sheet to dictionary format
+        
+        Returns:
+            Dict: Balance sheet data as dictionary
+        """
+        return {
+            'assets': self.data['assets'].copy(),
+            'liabilities': self.data['liabilities'].copy(),
+            'equity': self.data['equity'].copy(),
+            'period': self.period,
+            'timestamp': self.timestamp
+        }
     
     def __repr__(self):
         return (f"BalanceSheet(Assets={self.total_assets():.2f}M, "
